@@ -61,17 +61,17 @@ variable "node_capacity_type" {
 variable "node_min_size" {
   description = "Minimum number of nodes in managed node group"
   type        = number
-  default     = 1
+  default     = 3
 }
 
 variable "node_max_size" {
   description = "Maximum number of nodes in managed node group"
   type        = number
-  default     = 1
+  default     = 5
 }
 
 variable "node_desired_size" {
   description = "Desired number of nodes in managed node group"
   type        = number
-  default     = 1
+  default     = 3
 }

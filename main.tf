@@ -49,7 +49,7 @@ module "eks" {
   }
 
   eks_managed_node_groups = {
-    # 1. Exactly 1 node to save money.
+    # 1. Scalable node pool: min 3, max 5, desired 3.
     # 2. SPOT instance for ~70% discount (~$0.05/hr).
     # 3. t3.xlarge (4 vCPU, 16GB RAM) to accommodate all 28 pods smoothly.
     cheap_spot_nodes = {
