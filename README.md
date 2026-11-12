@@ -41,7 +41,6 @@ flowchart TD
                             PropertySvc["Property Management"]
                             RentalSvc["Rental Agreement Service"]
                             MLModels["ML Price & Recommendation Models"]
-                            DataStores["MySQL & Kafka (Persistent State)"]
                         end
 
                         subgraph GitOpsK8s["GitOps & Secret Management"]
@@ -68,7 +67,6 @@ flowchart TD
     GatewayService -->|"Internal Routing"| PropertySvc
     GatewayService -->|"Internal Routing"| RentalSvc
     GatewayService -->|"Inference Requests"| MLModels
-    DataStores -->|"Dynamic PVCs"| EBSCSI
 
     %% Outbound Egress Traffic Flow
     PrivateSubnets -->|"Outbound Traffic"| NAT
@@ -95,7 +93,7 @@ flowchart TD
 - **Flexible Scalable Node Group**: Supports auto-scaling from **3 minimum** up to **5 maximum nodes** (default initial capacity: 3). Configured for cost-effective instance families (e.g., `m7i-flex.large` or SPOT instances) to provide optimal compute-to-price ratio for running 28+ pods concurrently.
 
 ### 3. Native Storage Orchestration
-- **AWS EBS CSI Driver Addon**: Pre-installed as an EKS managed addon with IAM role integration (`AmazonEBSCSIDriverPolicy`), enabling dynamic PersistentVolumeClaim (PVC) provisioning for stateful workloads like Kafka, Zookeeper, and MySQL.
+- **AWS EBS CSI Driver Addon**: Pre-installed as an EKS managed addon with IAM role integration (`AmazonEBSCSIDriverPolicy`), enabling dynamic PersistentVolumeClaim (PVC) provisioning for persistent cluster storage.
 
 ### 4. GitOps & Zero-Trust Secrets Bootstrap
 - **Sealed Secrets Key Injection**: Automatically pre-injects your existing private key (`sealed-secrets-key.json`) into `kube-system` so that all encrypted secrets committed in Git can decrypt instantly upon deployment.
