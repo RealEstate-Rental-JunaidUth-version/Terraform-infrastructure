@@ -23,18 +23,15 @@ resource "helm_release" "argocd" {
   }
 }
 
-# 3. Deploy Sealed Secrets Controller Application into Argo CD
-# Depends on Argo CD being installed and the decryption key being present in kube-system
-resource "kubernetes_manifest" "argocd_sealed_secrets_app" {
+# 3. Automatically deploy Argo CD Applications once Argo CD is ready
+resource "terraform_data" "deploy_argocd_apps" {
   depends_on = [helm_release.argocd, kubernetes_manifest.sealed_secrets_key]
 
-  manifest = yamldecode(file("${path.module}/../realestate-chart/sealed-secrets-controller.yaml"))
-}
-
-# 4. Deploy the Main RealEstate Microservices Application into Argo CD
-# Depends on Argo CD and the Sealed Secrets app being triggered
-resource "kubernetes_manifest" "argocd_realestate_app" {
-  depends_on = [helm_release.argocd, kubernetes_manifest.argocd_sealed_secrets_app]
-
-  manifest = yamldecode(file("${path.module}/../realestate-chart/argocd-app.yaml"))
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}
+      kubectl apply -f ${path.module}/../realestate-chart/sealed-secrets-controller.yaml
+      kubectl apply -f ${path.module}/../realestate-chart/argocd-app.yaml
+    EOT
+  }
 }
