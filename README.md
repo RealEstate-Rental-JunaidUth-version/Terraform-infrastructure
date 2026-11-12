@@ -4,7 +4,7 @@
 ![AWS EKS](https://img.shields.io/badge/AWS_EKS-v1.31-FF9900?logo=amazon-aws&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.31-326CE5?logo=kubernetes&logoColor=white)
 ![Argo CD](https://img.shields.io/badge/GitOps-Argo_CD_v7.0.0-EF7B4D?logo=argo&logoColor=white)
-![Bitnami Sealed Secrets](https://img.shields.io/badge/Security-Sealed_Secrets-009688?logo=bitnami&logoColor=white)
+
 
 Production-grade, automated Infrastructure as Code (IaC) provisioning an Amazon EKS cluster with multi-AZ networking, automated GitOps continuous deployment (Argo CD), and encrypted secrets management.
 
@@ -16,13 +16,15 @@ The infrastructure follows a multi-tier cloud architecture designed for high ava
 
 ```mermaid
 flowchart TD
+    Users["🌐 External Users / Web & Mobile Clients"]
+
     subgraph AWS["AWS Cloud (Region: us-east-1)"]
         subgraph VPC["VPC: realestate-vpc (10.0.0.0/16)"]
             
             subgraph PublicSubnets["Public Subnets (us-east-1a, us-east-1b)"]
                 IGW["Internet Gateway"]
+                CLB["Cloud Load Balancer (Auto-provisioned via Ingress-Nginx)"]
                 NAT["NAT Gateway"]
-                ALB["AWS Application Load Balancer"]
             end
 
             subgraph PrivateSubnets["Private Subnets (EKS Worker Nodes)"]
@@ -31,40 +33,52 @@ flowchart TD
                     EBSCSI["AWS EBS CSI Driver Addon"]
 
                     subgraph NodeGroup["Managed Node Group (Auto-scaling: 3 to 5 Nodes)"]
-                        Node1["Worker Node 1"]
-                        Node2["Worker Node 2"]
-                        Node3["Worker Node 3"]
-                        NodeAuto["Scale-out Nodes (up to 5)"]
+                        IngressNginx["Ingress-Nginx Controller"]
+                        GatewayService["API Gateway Service"]
+
+                        subgraph Microservices["Microservices & AI Platform"]
+                            AuthSvc["Auth & User Services"]
+                            PropertySvc["Property Management"]
+                            RentalSvc["Rental Agreement Service"]
+                            MLModels["ML Price & Recommendation Models"]
+                            DataStores["MySQL & Kafka (Persistent State)"]
+                        end
+
+                        subgraph GitOpsK8s["GitOps & Secret Management"]
+                            ArgoCD["Argo CD (v7.0.0)"]
+                            SealedController["Bitnami Sealed Secrets Controller"]
+                        end
                     end
                 end
             end
         end
     end
 
-    subgraph GitOps["GitOps Continuous Delivery (In-Cluster)"]
-        ArgoCD["Argo CD (v7.0.0)"]
-        SealedController["Bitnami Sealed Secrets Controller"]
-        K8sSecrets["Decrypted K8s Secrets"]
-        
-        ArgoCD -->|"Applies Manifests"| Microservices["Microservices & AI Stack"]
-        SealedController -->|"Decrypts In-Cluster"| K8sSecrets
-        K8sSecrets -.->|"Injected into"| Microservices
-    end
-
     subgraph GitHub["GitHub Repositories"]
         InfraRepo["terraform-infra (This Repo)"]
-        ChartRepo["realestate-chart (Helm Charts)"]
-        AppsRepo["Microservice Source Repos (15+ Repos)"]
+        ChartRepo["realestate-chart (Helm Manifests)"]
     end
 
-    InfraRepo -->|"terraform apply"| AWS
-    ChartRepo -->|"GitOps Sync (Pull)"| ArgoCD
-    NodeGroup -->|"Runs"| ArgoCD
-    NodeGroup -->|"Runs"| SealedController
-    NodeGroup -->|"Runs"| Microservices
-    ALB -->|"Ingress Routing"| NodeGroup
+    %% Inbound User Traffic Flow
+    Users -->|"HTTPS / HTTP"| IGW
+    IGW -->|"Routes Inbound"| CLB
+    CLB -->|"Forward to NodePort"| IngressNginx
+    IngressNginx -->|"Reverse Proxy"| GatewayService
+    GatewayService -->|"Internal Routing"| AuthSvc
+    GatewayService -->|"Internal Routing"| PropertySvc
+    GatewayService -->|"Internal Routing"| RentalSvc
+    GatewayService -->|"Inference Requests"| MLModels
+    DataStores -->|"Dynamic PVCs"| EBSCSI
+
+    %% Outbound Egress Traffic Flow
     PrivateSubnets -->|"Outbound Traffic"| NAT
     NAT -->|"Outbound Internet"| IGW
+
+    %% GitOps Continuous Delivery Flow
+    InfraRepo -->|"terraform apply"| AWS
+    ChartRepo -->|"GitOps Sync (Pull)"| ArgoCD
+    ArgoCD -->|"Deploys & Self-Heals"| Microservices
+    SealedController -->|"Decrypts In-Cluster Secrets"| Microservices
 ```
 
 ---
@@ -74,7 +88,8 @@ flowchart TD
 ### 1. High Availability & Network Isolation
 - **Multi-AZ Footprint**: Deployed across `us-east-1a` and `us-east-1b` with discrete public and private CIDR blocks.
 - **Private Worker Isolation**: Worker nodes run entirely in private subnets without public IPs, shielding microservices from direct internet exposure.
-- **Dynamic Kubernetes Ingress Tags**: Subnets are tagged with `kubernetes.io/role/elb` and `kubernetes.io/role/internal-elb` for automatic AWS ALB/NLB discovery.
+- **End-to-End Ingress Routing**: External traffic arrives through the Internet Gateway to a Cloud Load Balancer (dynamically managed by Ingress-Nginx in public subnets), which routes securely to the internal API Gateway and backend microservices.
+- **Subnet Discovery Tags**: Subnets are tagged with `kubernetes.io/role/elb` and `kubernetes.io/role/internal-elb` so Kubernetes can automatically discover public subnets when creating LoadBalancer services.
 
 ### 2. Scalable Compute & Resource Optimization
 - **Flexible Scalable Node Group**: Supports auto-scaling from **3 minimum** up to **5 maximum nodes** (default initial capacity: 3). Configured for cost-effective instance families (e.g., `m7i-flex.large` or SPOT instances) to provide optimal compute-to-price ratio for running 28+ pods concurrently.
@@ -115,7 +130,7 @@ terraform-infra/
 | `availability_zones` | Availability zones for VPC subnets | `list(string)` | `["us-east-1a", "us-east-1b"]` |
 | `private_subnets` | Private subnet CIDR blocks for worker nodes | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` |
 | `public_subnets` | Public subnet CIDR blocks for load balancers | `list(string)` | `["10.0.101.0/24", "10.0.102.0/24"]` |
-| `cluster_name` | Name of the Amazon EKS cluster | `string` | `"realestate-test-cluster"` |
+| `cluster_name` | Name of the Amazon EKS cluster | `string` | `"realestate-cluster"` |
 | `cluster_version` | Kubernetes control plane version | `string` | `"1.31"` |
 | `node_instance_types` | EC2 instance types for the managed node group | `list(string)` | `["m7i-flex.large"]` |
 | `node_capacity_type` | Node capacity type (`ON_DEMAND` or `SPOT`) | `string` | `"ON_DEMAND"` |
@@ -177,7 +192,7 @@ terraform-infra/
 6. **Connect `kubectl` to your new EKS Cluster**:
    Execute the output command generated by Terraform:
    ```bash
-   aws eks update-kubeconfig --region us-east-1 --name realestate-test-cluster
+   aws eks update-kubeconfig --region us-east-1 --name realestate-cluster
    ```
 
 7. **Verify Cluster & Pod Health**:
